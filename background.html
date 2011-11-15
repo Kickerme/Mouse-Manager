@@ -1,0 +1,380 @@
+<input id="clipboard" value="" />
+
+<script type="text/javascript">
+
+chrome.tabs.onSelectionChanged.addListener(function(tabId, selectInfo) {
+	/*chrome.tabs.update(11, {
+		selected: true
+	})*/
+});
+
+var click = false
+var newTab = false
+
+var request = {
+	clipboard: null,
+	
+	createNewTab: function (senderTab, param) {
+		if (!param) param = { selected: true }
+		
+		chrome.tabs.executeScript(senderTab.id, {code: 'newTab = true;', allFrames: true}, function(){
+			chrome.tabs.create(param, function(){
+				request.clear()
+			})
+		})
+	},
+	
+	scrolling: function (senderTab, top, left) {
+		chrome.tabs.executeScript(senderTab.id, {code: 'scroll('+ top +', '+ left +');'} )
+	},
+	
+	clear: function (params) {
+		if (!params) params = 'clickDown = false; scrolling = false; scrollMouse = false; topMouse = 0; sendBlock = true;'
+		
+		chrome.tabs.getAllInWindow(null, function(tabs) {
+			tabs.forEach(function(tab) {
+				chrome.tabs.executeScript(tab.id, {
+					allFrames: true,
+					code: params
+				})
+			})
+		})
+	},
+	
+	addScript: function (tabId, script, callback) {
+		this.executeScript(tabId, {
+			file: script,
+			allFrames: true
+		}, callback)
+	},
+	
+	addCode: function (tabId, code, callback) {
+		this.executeScript(tabId, {
+			code: code,
+			allFrames: true
+		}, callback)
+	},
+	
+	goUrlNewTab: function (senderTab, url) {
+		this.createNewTab(senderTab, {
+			selected: true,
+			url: url
+		})
+	},
+	
+	executeScript: function (tabId, params, callback) {
+		if (!callback) callback = function() {}
+		
+		chrome.tabs.executeScript(tabId, params, callback)
+	},
+	
+	updateTab: function (tab, params, callback) {
+		if (!params) params = { url: tab.url }
+		if (!callback) callback = function() { }
+		
+		chrome.tabs.update(tab.id, params, callback)
+	},
+	
+	newWindow: function(senderTab, params) {
+		if (!params) params = { focused: true }
+		
+		this.addCode(senderTab.id, 'newTab = true;', function() {
+			chrome.windows.create(params, function() {
+				request.clear()
+			})
+		})
+	},
+	
+	copyToClipboard: function (str) {
+		this.clipboard.value = str
+		this.clipboard.select()
+		document.execCommand("copy", false, null)
+	},
+	
+	install: function () {
+		this.clipboard = document.getElementById("clipboard");
+		
+		var defaultVars = {
+			linux_content_bug: 0,
+			linux_content_bug_timeout: 300,
+			sens_scroll: 5,
+			sens_mouse_left_right: 30,
+			sens_mouse_top_bottom: 30,
+			sens_mouse_click: 150,
+			motion_scroll_up: 'prevTab',
+			motion_scroll_down: 'nextTab',
+			motion_mouse_left: 'prevTab',
+			motion_mouse_right: 'nextTab',
+			motion_mouse_up: 'updateTab',
+			motion_mouse_down: 'newTab',
+			motion_click_right_left: 'scrollTop',
+			motion_doubleclick_right_left: 'pinnedTab'
+		}
+		
+		for (defaultVar in defaultVars) {
+			if (!localStorage[defaultVar]) localStorage[defaultVar] = defaultVars[defaultVar]
+		}
+		
+		//console.log(sendCode)
+		var sendCode = request.installTabParams()
+		
+		chrome.tabs.getAllInWindow(null, function(tabs) {
+			for (i = 0; i < tabs.length; i++) {
+				request.addScript(tabs[i].id, 'execute.js')
+				request.addCode(tabs[i].id, sendCode)
+			}
+		})
+		
+		chrome.extension.onRequest.addListener(function(requestObj, MessageSender) {	
+			var senderTab = MessageSender.tab
+			
+			switch (requestObj.type) {
+				case 'click_down':
+					click = true
+					break
+				
+				case 'click_up':
+					click = false
+					break
+					
+				case 'clear':
+					var clearParams
+					if (requestObj.param) clearParams = requestObj.param
+					
+					request.clear(clearParams)
+					break
+					
+				case 'click_right_left':
+				case 'doubleclick_right_left':
+				case 'scroll':
+				case 'mouse_move':
+					request.callMotion(requestObj.type, requestObj, senderTab)
+					break
+				default:
+					break	
+			}
+		})
+		
+		chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
+			var sendCode = request.installTabParams()
+			request.addCode(tabId, 'newTab = true; ' + sendCode, function () {
+				newTab = false
+			})
+		})
+		
+		chrome.tabs.onCreated.addListener(function(tab) {
+			var sendCode = request.installTabParams()
+			request.addCode(tab.id, sendCode, function () {
+				newTab = false
+			})
+		})
+	},
+	
+	installTabParams: function () {
+		var varParams = ['sens_scroll', 'sens_mouse_left_right', 'sens_mouse_top_bottom', 'sens_mouse_click', 'linux_content_bug', 'linux_content_bug_timeout']
+		var sendCode = []
+		
+		for (paramKey in varParams) {
+			var nameParam = varParams[paramKey]
+			sendCode.push(nameParam + ' = "' + localStorage[nameParam] + '";')
+		}
+		
+		sendCode = sendCode.join(' ')
+		
+		return sendCode
+	},
+	
+	selectTab: function (senderTab, params) {
+		request.updateTab(params.nextTab, { selected: true })
+		
+		request.executeScript(params.nextTab.id, {
+			code: 'clickDown = true; scrollMouse = true; topMouse = ' + params.top + '; leftMouse = ' + params.left + '; wheelNum = 0;',
+			allFrames: true
+		}, function() {
+			chrome.tabs.executeScript(senderTab.id, {
+				code: 'sendBlock = true;',
+				allFrames: true
+			})
+		})
+	},
+	
+	scroll: function (senderTab, params) {
+		chrome.tabs.getAllInWindow(null, function(tabs) {
+			var firstTab, nextTab
+			if (tabs.length <= 1) return false
+			
+			for (i = 0; i < tabs.length; i++) {
+				var tab = tabs[i]
+				if (i == 0) firstTab = tab
+				if (tab.selected === true) {
+					if (params.scroll == 'down') {
+						if (tabs.length > i + 1) {
+							nextTab = tabs[i + 1]
+						} else {
+							nextTab = firstTab
+						}
+					} else {
+						if (i - 1 >= 0) {
+							nextTab = tabs[i - 1]
+						} else {
+							nextTab = tabs[tabs.length - 1]
+						}
+					}
+					
+					break
+				}
+			}
+			params.nextTab = nextTab
+			
+			request.selectTab(senderTab, params)
+		})
+	},
+	
+	callMotion: function (motionName, params, senderTab) {
+		var motionParams = {}
+		
+		if (motion[motionName]) {
+			var motionResult = motion[motionName].apply(this, [senderTab, params])
+			
+			if (motionResult.name) motionName = motionResult.name
+			if (motionResult.params) motionParams = motionResult.params
+		}
+		
+		motionName = 'motion_' + motionName
+		
+		var actionName = localStorage[motionName]
+		
+		if (!action[actionName]) return false
+		
+		var actionResult = action[actionName].apply(this, [senderTab, motionParams])
+	}
+}
+
+var motion = {
+	scroll: function(senderTab, params) {
+		return {
+			name: 'scroll_' + params.scroll
+		}
+	},
+	
+	mouse_move: function(senderTab, params) {
+		return {
+			name: 'mouse_' + params.mouse,
+			params: params
+		}
+	}
+}
+
+var action = {
+	goHome: function (senderTab, params) {
+		request.updateTab(senderTab, { url: 'chrome://newtab/' })
+	},
+	
+	closeTab: function (senderTab, params) {
+		chrome.tabs.getAllInWindow(null, function(tabs) {
+			var totalTabs = tabs.length - 1
+			var num = 0
+			
+			tabs.forEach(function(tab) {
+				request.addCode(tab.id, 'closeTab = true; clickDown = true;')
+				num++
+				
+				if (num == totalTabs) {
+					chrome.tabs.remove(senderTab.id)
+				}
+			})
+		})
+	},
+	
+	pinnedTab: function (senderTab, params) {
+		var pinned = senderTab.pinned
+		
+		if (pinned === true) pinned = false
+		else pinned = true
+		
+		request.updateTab(senderTab, { pinned: pinned })
+	},
+	
+	updateTab: function (senderTab, params) {
+		setTimeout(function(){
+			request.updateTab(senderTab)
+		}, 200)
+	},
+	
+	extensionSettings: function (senderTab, params) {
+		request.goUrlNewTab(senderTab, 'chrome://settings/extensionSettings')
+	},
+	
+	browserSettings: function (senderTab, params) {
+		request.goUrlNewTab(senderTab, 'chrome://settings/browser')
+	},
+	
+	history: function (senderTab, params) {
+		request.goUrlNewTab(senderTab, 'chrome://history/')
+	},
+	
+	bookmarks: function (senderTab, params) {
+		request.goUrlNewTab(senderTab, 'chrome://bookmarks/')
+	},
+	
+	downloads: function (senderTab, params) {
+		request.goUrlNewTab(senderTab, 'chrome://downloads/')
+	},
+	
+	scrollTop: function (senderTab, params) {
+		request.scrolling(senderTab, 0, 0)
+	},
+	
+	scrollBottom: function (senderTab, params) {
+		request.scrolling(senderTab, 0, 'document.body.scrollHeight')
+	},
+	
+	viewSource: function (senderTab, params) {	
+		request.createNewTab(senderTab, {
+			selected: true,
+			url: 'view-source:' + senderTab.url,
+			index: senderTab.index + 1
+		})
+	},
+	
+	newWindow: function (senderTab, params) {
+		request.newWindow(senderTab)
+	},
+	
+	newWindowIncognito: function (senderTab, params) {
+		request.newWindow(senderTab, {
+			focused: true,
+			incognito: true
+		})
+	},
+	
+	newTab: function (senderTab, params) {
+		request.createNewTab(senderTab)
+	},
+	
+	prevPage: function (senderTab, params) {
+		newTab = true
+		request.addCode(senderTab.id, 'history.go(-1);')
+	},
+	
+	nextPage: function (senderTab, params) {
+		newTab = true
+		request.addCode(senderTab.id, 'history.go(+1);')
+	},
+	
+	prevTab: function (senderTab, params) {
+		params.scroll = 'up'
+		
+		request.scroll(senderTab, params)
+	},
+	
+	nextTab: function (senderTab, params) {
+		params.scroll = 'down'
+		
+		request.scroll(senderTab, params)
+	}
+}
+
+request.install()
+
+</script>

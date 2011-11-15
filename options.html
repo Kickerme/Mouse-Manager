@@ -1,0 +1,215 @@
+<html>
+<head>
+<title>Mouse Manager Options</title>
+<link href="style.css" rel="stylesheet" type="text/css" />
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+</head>
+
+<script type="text/javascript">
+
+var $ = function(id){
+	return document.getElementById(id);
+}
+
+var motionActions = {
+	'newTab': 'новая вкладка',
+	'newWindow': 'новое окно',
+	'newWindowIncognito': 'новое окно в режиме инкогнито',
+	'updateTab': 'обновить вкладку',
+	'prevTab': 'предыдущая вкладка',
+	'nextTab': 'следующая вкладка',
+	'pinnedTab': 'закрепить/открепить вкладку',
+	'closeTab': 'закрыть вкладку',
+	'scrollTop': 'наверх страницы',
+	'scrollBottom': 'вниз страницы',
+	'goHome': 'домашняя страница',
+	'prevPage': 'на страницу назад',
+	'nextPage': 'на страницу вперед',
+	'viewSource': 'исходный код',
+	'extensionSettings': 'расширения',
+	'browserSettings': 'параметры',
+	'bookmarks': 'закладки',
+	'history': 'история',
+	'downloads': 'загрузки'
+}
+
+// Saves options to localStorage.
+function save_options() {
+  
+}
+
+// Restores select box state to saved value from localStorage.
+function restore_options() {
+  setInput('sens_scroll')
+  setInput('linux_content_bug_timeout')
+  setCheckBox('linux_content_bug')
+  //setInput('sens_mouse_left_right')
+  //setInput('sens_mouse_top_bottom')
+  //setInput('sens_mouse_click')
+  
+  $('sens_scroll').onchange = function() {
+  	setLocal('sens_scroll', this.value)
+  }
+  
+  $('linux_content_bug_timeout').onchange = function() {
+  	setLocal('linux_content_bug_timeout', this.value)
+  }
+  
+  $('linux_content_bug').onchange = function() {
+  	var value = 0
+  	if (this.checked) value = 1
+  	
+  	setLocal('linux_content_bug', value)
+  }
+  /*$('sens_mouse_left_right').onchange = function() {
+  	setLocal('sens_mouse_left_right', this.value)
+  }
+  $('sens_mouse_top_bottom').onchange = function() {
+  	setLocal('sens_mouse_top_bottom', this.value)
+  }
+  $('sens_mouse_click').onchange = function() {
+  	setLocal('sens_mouse_click', this.value)
+  }*/
+  
+  motions = [
+  	'motion_scroll_up',
+  	'motion_scroll_down'/*,
+  	'motion_mouse_left',
+  	'motion_mouse_right',
+  	'motion_mouse_up',
+  	'motion_mouse_down',
+  	'motion_click_right_left',
+  	'motion_doubleclick_right_left'*/
+  ]
+  
+  for (var motionKey in motions) {
+  	var motion = $(motions[motionKey])
+  	var defaultValue = getLocal(motions[motionKey])
+  	
+  	for (var actionKey in motionActions) {
+  		var newItem = document.createElement("option")
+  		newItem.innerHTML = motionActions[actionKey]
+  		newItem.value = actionKey
+  		
+  		if (defaultValue == actionKey) newItem.selected = true
+  		
+  		motion.appendChild(newItem)
+  	}
+  	
+  	motion.onchange = function() {
+  		setLocal(this.id, this.value)
+  	}
+  }
+}
+
+function setLocal(name, value) {
+	localStorage[name] = value
+	
+	chrome.tabs.getAllInWindow(null, function(tabs) {
+		tabs.forEach(function(tab) {
+			chrome.tabs.executeScript(tab.id, {
+				allFrames: true,
+				code: name + ' = "' + value + '";'
+			})
+		})
+	})
+}
+
+function getLocal(name) {
+	return localStorage[name]
+}
+
+function setInput(name) {
+	$(name).value = getLocal(name)
+}
+
+function setCheckBox(name) {
+	var check = false
+	if (getLocal(name) == 1) check = true
+	
+	$(name).checked = check
+}
+
+</script>
+
+<body onload="restore_options()">
+<div id="contents">
+	<div id="view">
+		<h1><img src="icon32x32.png" />Mouse Manager: <small>Настройки</small></h1>
+		<br />
+		<ul class="options-list">
+			<li><label>Чувствительность</label></li>
+			<li>
+			<table width="100%">
+				<tr>
+					<td width="33%" valign="top">
+						<ul class="options-list">
+							<li><label><input type="number" class="int" min="1" max="150" step="1" id="sens_scroll"> колесико мыши</label></li>
+						</ul>
+					</td>
+					<!--<td width="33%" valign="top">
+						<ul class="options-list">
+							<li><label><input type="number" class="int" min="1" max="150" step="1" id="sens_mouse_left_right"> мышь влево вправо</label></li>
+						</ul>
+					</td>
+					<td width="33%" valign="top">
+						<ul class="options-list">
+							<li><label><input type="number" class="int" min="1" max="150" step="1" id="sens_mouse_top_bottom"> мышь вверх вниз</label></li>
+						</ul>
+					</td>-->
+				</tr>
+				<!--<tr>
+					<td width="33%" valign="top">
+						<ul class="options-list">
+							<li><label><input type="number" class="int" min="20" max="1000" step="1" id="sens_mouse_click"> двойной клик</label></li>
+						</ul>
+					</td>
+					<td width="33%" valign="top">
+						
+					</td>
+					<td width="33%" valign="top">
+						
+					</td>
+				</tr>-->
+			</table>
+			</li>
+		</ul>
+		
+		<ul class="options-list">
+			<li><label>Жесты <small>(срабатывают при зажатой правой кнопки мыши)</small></label></li>
+			<li>
+				<table width="100%">
+					<tr>
+						<td width="50%" valign="top">
+							<ul class="options-list">
+								<li><label><select id="motion_scroll_up"></select> колесико вверх</label></li>
+								<li><label><select id="motion_scroll_down"></select> колесико вниз</label></li>
+								<!--<li><label><select id="motion_click_right_left"></select> клик левой кнопкой мыши</label></li>
+								<li><label><select id="motion_doubleclick_right_left"></select> двойной клик левой кнопкой мыши</label></li>-->
+							</ul>
+						</td>
+						<td width="50%" valign="top">
+							<ul class="options-list">
+								<!--<li><label><select id="motion_mouse_left"></select> мышь влево</label></li>
+								<li><label><select id="motion_mouse_right"></select> мышь вправо</label></li>
+								<li><label><select id="motion_mouse_up"></select> мышь вверх</label></li>
+								<li><label><select id="motion_mouse_down"></select> мышь вниз</label></li>-->
+							</ul>
+						</td>
+					</tr>
+				</table>
+			</li>
+		</ul>
+		
+		<ul class="options-list">
+			<li><label>Дополнительные настройки</label></li>
+			<li><label><input type="checkbox" id="linux_content_bug" value="1"> Linux context bug. Расширение будет работать как обычно, только для доступа к контекстному меню - необходимо двойное нажатие правой кнопки</label></li>
+			<li><label><input type="number" class="int" min="10" max="500" step="10" id="linux_content_bug_timeout"> Linux context bug. Скорость двойного нажатия</label></li>
+		</ul>
+		<div id="footer">
+		Автор: Kicker
+		</div>
+	</div>
+</div>
+</body>
+</html>
